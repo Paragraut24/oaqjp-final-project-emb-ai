@@ -2,7 +2,27 @@
 Emotion Detection Module using Watson NLP Emotion Predict service.
 """
 import json
+import socket
 import requests
+
+SERVICE_STATUS = {"reachable": None}
+
+
+def is_service_available():
+    """
+    Checks if the Watson NLP service is reachable on the current network.
+    Caches the result to avoid repeated connection delays when offline.
+    """
+    if SERVICE_STATUS["reachable"] is not None:
+        return SERVICE_STATUS["reachable"]
+    try:
+        with socket.create_connection(
+            ("sn-watson-emotion.labs.skills.network", 443), timeout=0.5
+        ):
+            SERVICE_STATUS["reachable"] = True
+    except (socket.error, OSError):
+        SERVICE_STATUS["reachable"] = False
+    return SERVICE_STATUS["reachable"]
 
 
 def emotion_detector(text_to_analyze):
@@ -10,6 +30,9 @@ def emotion_detector(text_to_analyze):
     Sends text to Watson NLP EmotionPredict and returns emotion scores
     and the dominant emotion, or None values if status code is 400.
     """
+    if not is_service_available():
+        return _local_mock_detector(text_to_analyze)
+
     url = (
         'https://sn-watson-emotion.labs.skills.network'
         '/v1/watson.runtime.nlp.v1/NlpService/EmotionPredict'
@@ -21,8 +44,7 @@ def emotion_detector(text_to_analyze):
 
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=10)
-    except requests.exceptions.ConnectionError:
-        # Fallback for local execution outside IBM Skills Network Cloud network
+    except requests.exceptions.RequestException:
         return _local_mock_detector(text_to_analyze)
 
     if response.status_code == 400:
